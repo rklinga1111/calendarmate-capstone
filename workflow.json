@@ -1,8 +1,17 @@
 {
-  "name": "CalendarMate",
-  "description": "Multi-agent AI assistant that classifies a natural-language calendar/email request and routes it to one specialist agent, each grounded by real tool calls and traced end-to-end in Langfuse.",
-  "version": "1.0",
+  "project": "CalendarMate",
+  "description": "Multi-agent AI assistant that classifies a natural-language calendar/email request and routes it to one specialist agent, each grounded by real tool calls and traced end-to-end in Langfuse. Built as an Applied Agentic AI capstone project.",
   "orchestration_pattern": "classify-then-dispatch",
+  "tech_stack": {
+    "language": "Python",
+    "llm_provider": "OpenAI",
+    "models_used": ["gpt-4o-mini", "gpt-4o"],
+    "observability": "Langfuse",
+    "real_integrations": ["Google Calendar API", "Gmail API", "Google Docs API"],
+    "test_framework": "pytest",
+    "fine_tuning": "none -- behavior governed by per-agent system prompts (src/calendarmate/prompts/*.md) plus code-level guards for anything exactly computable"
+  },
+
   "entry_points": [
     {
       "id": "pytest",
@@ -10,15 +19,19 @@
       "file": "tests/",
       "data_mode": "mocked",
       "traced": false,
-      "description": "Deterministic keyword assertions per agent, called directly (not through the router) in most cases."
+      "test_count": 162,
+      "description": "Deterministic keyword assertions per agent. Live tests (calling the real OpenAI API) are skipped automatically without OPENAI_API_KEY set.",
+      "known_flaky_test": "one live-model test occasionally fails due to run-to-run model variance, not a real bug"
     },
     {
       "id": "harness",
       "name": "Evaluation harness",
-      "file": "harness.py",
+      "files": ["harness.py", "judge_openai.py", "baseline_cases.json"],
       "data_mode": "mocked",
       "traced": true,
-      "description": "Runs 18 baseline + edge cases through the full pipeline, graded by an LLM judge (judge_openai.py)."
+      "description": "Runs the full case set through the real end-to-end pipeline (classification + dispatch + grounded generation) and grades each response with an LLM judge against that case's specific criteria. Distinct from pytest: pytest makes deterministic keyword assertions calling each agent directly; the harness judges natural-language output against prose criteria through the full pipeline.",
+      "results_file": "eval_results.json",
+      "date_pinning": "date.today() is patched to 2025-06-17 for briefing.py/email.py/scheduler.py so June-2025 fixture requests stay reproducible regardless of the real wall-clock date"
     },
     {
       "id": "live_assistant",
@@ -26,47 +39,52 @@
       "file": "live_assistant.py",
       "data_mode": "real",
       "traced": true,
-      "description": "Real Google Calendar and Gmail account, one request per invocation."
+      "description": "Real Google Calendar and Gmail account, one request per invocation. Kept entirely separate from run_orchestrator's mocked default -- pytest and harness.py never touch this file or the real account."
     }
   ],
-  "nodes": [
-    {
-      "id": "orchestrator",
-      "type": "router",
-      "name": "Orchestrator",
-      "file": "src/calendarmate/orchestrator.py",
-      "function": "route_request",
-      "model": "gpt-4o-mini",
-      "temperature": 0,
-      "traced": true,
-      "trace_span": "classify-intent",
-      "description": "Classifies the request into exactly one of five routes. Never answers the request itself.",
-      "outputs": ["briefing", "scheduling", "email", "follow_up", "digest"],
-      "on_invalid_output": "run_orchestrator catches ValueError and returns FALLBACK_MESSAGE instead of raising"
+
+  "orchestrator": {
+    "id": "orchestrator",
+    "name": "Orchestrator",
+    "files": ["src/calendarmate/orchestrator.py", "src/calendarmate/pipeline.py"],
+    "functions": {
+      "route_request": "classifies the request into exactly one label, never generates the final answer",
+      "run_orchestrator": "calls route_request, looks up the matching agent in _DISPATCH, calls it, returns its answer unmodified"
     },
+    "model": "gpt-4o-mini",
+    "temperature": 0,
+    "traced": true,
+    "trace_spans": ["run-orchestrator", "classify-intent"],
+    "valid_routes": ["briefing", "scheduling", "email", "follow_up", "digest"],
+    "fallback_behavior": "an unclassifiable request (empty label, or one outside the 5 routes) raises ValueError inside route_request; run_orchestrator catches it and returns FALLBACK_MESSAGE instead of crashing -- found via the harness's T15 edge case, where the live classifier once returned an empty string and took down an entire run"
+  },
+
+  "agents": [
     {
       "id": "briefing",
-      "type": "agent",
       "name": "Briefing Agent",
+      "capability_tier": "core",
       "file": "src/calendarmate/briefing.py",
       "function": "answer_briefing",
       "model": "gpt-4o-mini",
       "traced": true,
       "trace_span": "answer-briefing",
-      "capability_tier": "core",
       "tools": ["get_calendar_events"],
-      "description": "Answers calendar questions. Conflict detection is exact-overlap math in Python, not model judgment."
+      "grounding": "the tool is the only source of event data the model is given -- conflict detection is exact-overlap math in Python (calendar_tool.find_conflicts), never model judgment",
+      "key_features": [
+        "day-name disambiguation: a weekday matching today's own weekday is asked about explicitly rather than guessed",
+        "weekday labels are computed in Python and returned by the tool (never asked of the model) after a real request mislabeled a date's weekday"
+      ]
     },
     {
       "id": "scheduler",
-      "type": "agent",
       "name": "Scheduler Agent",
+      "capability_tier": "core",
       "file": "src/calendarmate/scheduler.py",
       "function": "handle_scheduling_request",
       "model": "gpt-4o-mini",
       "traced": true,
       "trace_span": "handle-scheduling",
-      "capability_tier": "core",
       "tools": [
         "check_availability",
         "propose_alternative_slots",
@@ -74,122 +92,195 @@
         "find_meeting_to_cancel",
         "cancel_event"
       ],
-      "extended_capabilities": [
-        "conflict_resolution",
-        "cancellation_with_ownership_check",
-        "recurring_meetings"
-      ],
-      "description": "Books, moves, and cancels meetings via a multi-round tool loop. Off-hours and past-time bookings are refused in code, not just by prompt."
+      "traced_tools": ["check_availability", "create_event"],
+      "grounding": "availability/conflict checks are exact overlap math in plain Python; only create_event has a side effect",
+      "extended_capabilities": {
+        "conflict_resolution": "names the conflicting meeting and offers a concrete trade-off (different time, move/shorten the existing meeting, or go async) instead of a bare refusal",
+        "cancellation": {
+          "ownership_check": "code-enforced -- refuses to cancel a meeting whose owner != the requesting user, regardless of what the model decides",
+          "lookup_grounding": "cancel_event is refused for any event_id the model didn't just receive from a find_meeting_to_cancel call in this same request",
+          "confirmation_rule": "unconditional two-step confirmation (lookup, then a separate confirming reply) -- deliberately stricter than every other rule in the app; this specific rule is prompt-enforced only, a known accepted limitation, not code-enforced",
+          "pending_confirmation_state": "a small gitignored .pending_cancellation.json lets live_assistant.py bridge the required two-step confirmation across two separate, otherwise-stateless CLI invocations"
+        },
+        "recurring_meetings": {
+          "mechanism": "structured recurrence fields (frequency, weekdays, until) are compiled into a real RRULE string in Python (_build_rrule) -- the model never writes RRULE syntax itself",
+          "mandatory_end_date": "an open-ended series can never be created -- 'how long should this repeat' is treated as missing information",
+          "known_limitation": "only the first occurrence's availability is ever checked; a conflict on a later occurrence in the series is not automatically caught"
+        },
+        "auto_generated_title": "the meeting title is the one field the Scheduler fills in itself (e.g. 'Meeting with Bob') rather than asking for, without ever inventing a topic/agenda",
+        "timezone_handling": "a named timezone is treated as descriptive only; the hour/minute given is passed through unchanged and never converted, after a real booking once landed at the wrong wall-clock hour",
+        "past_time_refusal": "a same-day time at or before the current time (an injected now parameter) is refused outright, never booked",
+        "off_hours_refusal": "code-level guard (_is_off_hours) refuses an unconfirmed weekend/before-8am/after-6pm booking -- moved into Python after three prompt-only attempts each caused an unrelated regression",
+        "same_time_as_existing_meeting": "can resolve 'same time as my standup' by reusing find_meeting_to_cancel as a read-only lookup, while still asking for attendees and surfacing the requester's own guaranteed self-conflict"
+      }
     },
     {
       "id": "email",
-      "type": "agent",
       "name": "Email Agent",
+      "capability_tier": "core",
       "file": "src/calendarmate/email.py",
       "function": "answer_email_request",
       "model": "gpt-4o",
+      "model_rationale": "the only agent on the full model, not gpt-4o-mini -- its action-required/FYI classification judgment call needed a stronger model after two prompt-only tuning rounds fell short (one of which backfired by hallucinating content)",
       "traced": true,
-      "trace_span": "answer-email",
-      "capability_tier": "core",
+      "trace_spans": ["answer-email", "classify-emails-batch"],
       "tools": ["get_emails", "classify_emails"],
-      "description": "Answers inbox questions and classifies mail into Action Required / Payment-Deadline / FYI. Only agent on the full model, not the mini variant, for classification accuracy."
+      "grounding": "get_emails is the sole source of which emails exist, preventing invented senders/subjects",
+      "extended_capabilities": {
+        "classification_categories": ["action_required", "payment_deadline_reminder", "fyi"],
+        "needs_attention_pool": "every unread email regardless of age, plus every email read within the last 5 days (negotiated with the user before implementing) -- widens the candidate pool without weakening the unread-mail guarantee",
+        "reply_detection": "a read email that the user has already replied to (checked via the Gmail thread's last message) is excluded from needs-attention, since a reply already sent is a stronger signal than recency",
+        "self_sent_exclusion": "an email whose sender is the user's own authenticated address is filtered out before classification, so the user is never flagged as waiting on their own reply",
+        "large_pool_batching": "classifies at most 15 emails per call via a forced-tool-call schema and merges results in Python, after a single freeform call on a 49-email pool was found to silently drop one item",
+        "date_range_vs_unread": "get_emails takes optional start_date/end_date to answer 'what came in last week' distinctly from 'what's unread' -- a needs-attention request never mistakes a period word like 'today' for a receive-date filter"
+      }
     },
     {
       "id": "followup",
-      "type": "agent",
       "name": "Follow-Up Agent",
+      "capability_tier": "extended",
       "file": "src/calendarmate/followup.py",
       "function": "run_followup_agent",
       "model": "gpt-4o-mini",
       "traced": true,
       "trace_span": "run-followup",
-      "capability_tier": "extended",
       "tools": ["get_meeting_record", "send_followup_email"],
-      "description": "Retrieves a past meeting's real notes and drafts/sends a follow-up email to its actual attendees."
+      "traced_tools": ["get_meeting_record", "send_followup_email"],
+      "grounding": "get_meeting_record is the only source of a meeting's attendees/notes, preventing invented action items",
+      "extended_capabilities": {
+        "real_notes_source": "for the real integration, notes are read from an attached 'Notes by Gemini' Google Doc first, falling back to the Calendar event's description field",
+        "html_email_formatting": "the drafted Markdown body is converted to real HTML before sending, so bold/bullets render correctly in Gmail instead of showing literal ** characters",
+        "sender_exclusion": "the sender is filtered out of the email's own recipient list in code, and the send is refused outright if that would leave zero recipients",
+        "draft_and_send_together": "an explicit send request is drafted and sent in the same reply rather than pausing to ask 'shall I send this'"
+      }
     },
     {
       "id": "digest",
-      "type": "agent",
       "name": "Digest Agent",
+      "capability_tier": "extended",
       "file": "src/calendarmate/digest.py",
       "function": "answer_digest_request",
       "model": null,
       "traced": false,
-      "capability_tier": "extended",
       "tools": [],
       "delegates_to": ["briefing", "email"],
-      "description": "No tools or LLM call of its own -- concatenates Briefing's and Email's independently grounded answers under two headings."
-    },
-    {
-      "id": "tools_mocked",
-      "type": "data_layer",
-      "name": "Mocked fixtures",
-      "file": "src/calendarmate/tools/*.py",
+      "description": "Has no tools or LLM call of its own -- concatenates Briefing's and Email's independently grounded answers under '### Calendar' / '### Email' headings. Deliberately not a third synthesizing LLM call, since two already-correct answers stitched together carries no hallucination risk where an extra pass would."
+    }
+  ],
+
+  "data_layer": {
+    "mocked": {
+      "tools": [
+        "src/calendarmate/tools/calendar_tool.py",
+        "src/calendarmate/tools/scheduling_tool.py",
+        "src/calendarmate/tools/email_tool.py",
+        "src/calendarmate/tools/followup_tool.py"
+      ],
       "fixtures": [
         "src/calendarmate/fixtures/calendar.json",
         "src/calendarmate/fixtures/inbox.json",
         "src/calendarmate/fixtures/meetings.json"
       ],
-      "used_by_entry_points": ["pytest", "harness"],
-      "description": "Pure-Python read/write functions over static JSON fixtures."
+      "used_by": ["pytest", "harness"]
     },
-    {
-      "id": "tools_real",
-      "type": "data_layer",
-      "name": "Real Google integrations",
-      "file": "src/calendarmate/integrations/*.py",
-      "apis": ["Google Calendar API", "Gmail API", "Google Docs API"],
-      "used_by_entry_points": ["live_assistant"],
-      "description": "Parallel, independent implementation of the same tool shapes against the user's real account."
-    },
-    {
-      "id": "langfuse",
-      "type": "observability",
-      "name": "Langfuse",
-      "file": "src/calendarmate/observability.py",
-      "functions": ["trace_agent_call", "trace_tool_call"],
-      "captures": ["one root span per request", "a named span per agent", "a named generation per LLM call", "four tool calls as tool-typed observations"],
-      "tags": ["agent name", "routed category", "user_id", "harness case id"],
-      "description": "Every span/call above reports here. Disabled unconditionally during pytest via LANGFUSE_TRACING_ENABLED=false."
+    "real": {
+      "integrations": [
+        "src/calendarmate/integrations/google_auth.py",
+        "src/calendarmate/integrations/google_calendar.py",
+        "src/calendarmate/integrations/gmail.py"
+      ],
+      "oauth_scopes": [
+        "Google Calendar",
+        "Gmail",
+        "Google Docs (read-only, for meeting notes)"
+      ],
+      "used_by": ["live_assistant"],
+      "isolation": "an independent, parallel implementation of the same tool shapes -- no environment flag or runtime branch could accidentally make a test touch a real account"
     }
-  ],
-  "edges": [
-    { "from": "pytest", "to": "orchestrator", "type": "invokes" },
-    { "from": "harness", "to": "orchestrator", "type": "invokes" },
-    { "from": "live_assistant", "to": "orchestrator", "type": "invokes" },
-
-    { "from": "orchestrator", "to": "briefing", "type": "routes", "condition": "category == briefing" },
-    { "from": "orchestrator", "to": "scheduler", "type": "routes", "condition": "category == scheduling" },
-    { "from": "orchestrator", "to": "email", "type": "routes", "condition": "category == email" },
-    { "from": "orchestrator", "to": "followup", "type": "routes", "condition": "category == follow_up" },
-    { "from": "orchestrator", "to": "digest", "type": "routes", "condition": "category == digest" },
-
-    { "from": "digest", "to": "briefing", "type": "delegates" },
-    { "from": "digest", "to": "email", "type": "delegates" },
-
-    { "from": "briefing", "to": "tools_mocked", "type": "reads", "when": "entry_point in [pytest, harness]" },
-    { "from": "scheduler", "to": "tools_mocked", "type": "reads_writes", "when": "entry_point in [pytest, harness]" },
-    { "from": "email", "to": "tools_mocked", "type": "reads", "when": "entry_point in [pytest, harness]" },
-    { "from": "followup", "to": "tools_mocked", "type": "reads_writes", "when": "entry_point in [pytest, harness]" },
-
-    { "from": "briefing", "to": "tools_real", "type": "reads", "when": "entry_point == live_assistant" },
-    { "from": "scheduler", "to": "tools_real", "type": "reads_writes", "when": "entry_point == live_assistant" },
-    { "from": "email", "to": "tools_real", "type": "reads", "when": "entry_point == live_assistant" },
-    { "from": "followup", "to": "tools_real", "type": "reads_writes", "when": "entry_point == live_assistant" },
-
-    { "from": "orchestrator", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
-    { "from": "briefing", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
-    { "from": "scheduler", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
-    { "from": "email", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
-    { "from": "followup", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" }
-  ],
-  "evaluation": {
-    "dataset": "baseline_cases.json",
-    "case_count": 18,
-    "grader": "judge_openai.py (LLM-as-judge)",
-    "harness": "harness.py",
-    "results_file": "eval_results.json",
-    "last_known_result": "18/18 passed"
   },
-  "note": "This project is hand-coded Python, not built in a visual workflow tool (n8n/Make/Flowise) -- this file is a hand-authored structured description of the same orchestration graph shown in the architecture diagram, provided to satisfy machine-readable workflow documentation requirements."
+
+  "observability": {
+    "tool": "Langfuse",
+    "setup_reference": "built using the official Langfuse skill (github.com/langfuse/skills), installed under .claude/skills/langfuse/",
+    "traced_entry_points": ["harness", "live_assistant"],
+    "untraced_entry_point": "pytest -- tests/conftest.py explicitly sets LANGFUSE_TRACING_ENABLED=false, since real credentials are otherwise available to that process too",
+    "instrumentation": {
+      "root_span": "one per real request (run-orchestrator for harness, handle-request for live_assistant)",
+      "per_agent_spans": ["classify-intent", "answer-briefing", "handle-scheduling", "answer-email", "run-followup"],
+      "per_generation_naming": "every client.create() call carries a name= matching its enclosing span, gated by a sys.modules check so it's safe whether the real Langfuse-wrapped client or a plain test client is passed in",
+      "traced_tool_calls": ["check_availability", "create_event", "get_meeting_record", "send_followup_email"]
+    },
+    "tags": ["agent name", "routed category (feature tag)", "user_id", "harness case id (e.g. T7)", "judge (on the harness's grading call)"],
+    "user_id_scheme": {
+      "harness": "fixed 'capstone-test-user' for every case, since this is a mocked eval run, not a real account",
+      "live_assistant": "the real authenticated Google account email, resolved once per invocation"
+    },
+    "cost_note": "the Email Agent's gpt-4o (vs every other agent's gpt-4o-mini) plus its batched classification calls (up to 15 emails per batch, multiple batches per large inbox) is the primary cost driver visible in the dashboard -- confirmed intentional, not a leftover default"
+  },
+
+  "evaluation": {
+    "dataset_file": "baseline_cases.json",
+    "harness_file": "harness.py",
+    "judge_file": "judge_openai.py",
+    "results_file": "eval_results.json",
+    "case_count": 18,
+    "last_known_result": "18/18 passed",
+    "cases": [
+      { "id": "T1", "story": "2.1", "request": "What's happening on June 17, 2025?", "tests": "lists meetings with times/attendees and names the Design Review / Client Sync conflict" },
+      { "id": "T2", "story": "2.2", "request": "What's happening on June 18, 2025?", "tests": "lists meetings accurately, never invents one" },
+      { "id": "T3", "story": "3.1", "request": "Schedule a 30-minute meeting with Bob on June 19, 2025 at 10am.", "tests": "checks availability before creating, includes a Meet link, confirms details" },
+      { "id": "T4", "story": "3.2", "request": "Schedule a meeting sometime this week.", "tests": "asks for missing day/time/attendee instead of guessing" },
+      { "id": "T5", "story": "3.3", "request": "Schedule a 30-minute meeting with Bob, Carol, and Dana on June 19, 2025, suggest options.", "tests": "checks availability for all three attendees, proposes multiple slots" },
+      { "id": "T6", "story": "3.4", "request": "Schedule a call with Bob on Saturday, June 21, 2025 at 9am.", "tests": "flags the weekend/unusual hour, asks for confirmation before booking" },
+      { "id": "T7", "story": "4.1", "request": "Summarize my emails.", "tests": "groups by urgency/topic, separates action-required from FYI, never invents content" },
+      { "id": "T8", "story": "4.2", "request": "What needs my attention?", "tests": "lists only action-required emails with sender/subject, never fabricates" },
+      { "id": "T9", "story": "3.5", "request": "Schedule a 30-minute meeting on June 19, 2025 at 2pm.", "tests": "asks who the meeting is with rather than guessing an attendee" },
+      { "id": "T10", "story": "2.3", "request": "Do I have any conflicts the week of June 16-22, 2025?", "tests": "checks the whole week, lists the specific conflicts" },
+      { "id": "T11", "story": "3.6", "request": "Schedule a meeting with Grace on June 17, 2025 from 11:30 to 12:00.", "tests": "detects and names the conflict, warns instead of booking over it, suggests an alternative" },
+      { "id": "T12", "story": "2.4", "request": "What's happening on Friday, June 20, 2025?", "tests": "shows only that exact day's events" },
+      { "id": "T13", "story": "edge: empty calendar", "request": "What's happening on June 22, 2025?", "tests": "states plainly there are no events, never invents one" },
+      { "id": "T14", "story": "edge: cross-timezone / midnight", "request": "Schedule a 30-minute meeting with Bob at 11:30pm on June 19, 2025 (Bob is in Tokyo).", "tests": "never fabricates a timezone conversion; still flags the unusual hour" },
+      { "id": "T15", "story": "edge: unclear intent", "request": "What's the capital of France?", "tests": "declines the off-topic question instead of guessing a category" },
+      { "id": "T16", "story": "edge: attendee with zero calendar events", "request": "Schedule a 30-minute meeting with Judy on June 18, 2025 at 2pm.", "tests": "checks availability for a totally unknown attendee, books cleanly since everyone's free" },
+      { "id": "T17", "story": "edge: follow-up for a meeting with no notes", "request": "What were the action items from the Quick Sync?", "tests": "states plainly there's nothing to report, never invents a commitment" },
+      { "id": "T18", "story": "edge: vague / nonsense request", "request": "asdkfjh qwoeiru zxcvbn blah blah", "tests": "never crashes, never fabricates, asks for clarification" }
+    ]
+  },
+
+  "testing": {
+    "pytest_total": 162,
+    "pytest_last_known_result": "162/162 (occasionally 161/162 due to one documented flaky live-model test)",
+    "live_tests_gate": "OPENAI_API_KEY must be set in .env, else live tests are skipped automatically",
+    "date_injection": "agent-level tests pin `today=`/`now=` explicitly so results never depend on the real wall-clock date"
+  },
+
+  "known_limitations": [
+    "Cancellation's confirm-before-acting rule is enforced by the prompt only, not by code -- a deliberate, disclosed exception to this project's usual code-level enforcement of safety-critical checks, since it depends on a genuinely separate prior turn a stateless function has no way to verify on its own",
+    "A recurring series' availability check only covers its first occurrence, not every future date the series would land on",
+    "No sensitive-data masking is applied to Langfuse traces -- a conscious choice for a personal, single-user project where the same calendar/email content already reaches OpenAI on every request regardless of tracing"
+  ],
+
+  "real_world_verification_highlights": [
+    "Booked, then found and deleted, real events that landed on the wrong day/hour before the date-lookup-table and timezone-passthrough fixes",
+    "Created a real recurring series (weekdays, through a fixed end date) and confirmed occurrence dates and the shared recurringEventId via the Calendar API",
+    "Looked up and correctly refused to cancel a real meeting owned by someone else",
+    "Sent a real follow-up email and read back the raw HTML body to confirm formatting and recipient exclusion",
+    "Confirmed real 'needs attention' fixes against the live inbox: self-sent mail excluded, already-replied mail excluded, payment reminders surfaced with exact real amounts/dates"
+  ],
+
+  "repository": {
+    "url": "https://github.com/rklinga1111/calendarmate-capstone",
+    "key_files": {
+      "orchestrator": "src/calendarmate/orchestrator.py",
+      "pipeline": "src/calendarmate/pipeline.py",
+      "agents": "src/calendarmate/{briefing,scheduler,email,followup,digest}.py",
+      "prompts": "src/calendarmate/prompts/*.md",
+      "observability": "src/calendarmate/observability.py",
+      "harness": "harness.py",
+      "live_entry_point": "live_assistant.py",
+      "docs": ["CLAUDE.md", "README.md", "CalendarMate_Writeup.docx"]
+    }
+  },
+
+  "note": "This project is hand-coded Python rather than built in a visual workflow tool (n8n/Make/Flowise), so nothing here was literally exported -- this file is a hand-authored, structured description of the same system covered in CLAUDE.md and the architecture diagram, provided to satisfy machine-readable workflow documentation requirements."
 }
