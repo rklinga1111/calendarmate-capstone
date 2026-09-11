@@ -9,7 +9,13 @@ briefing, scheduling, email, follow-up, or combined digest specialist. See
 [calendarmate-backlog.md](calendarmate-backlog.md) for the full story
 backlog and acceptance criteria (T1-T12), and
 [calendarmate-followup-agent-spec.md](calendarmate-followup-agent-spec.md)
-for the Follow-Up Agent's detailed build spec.
+for the Follow-Up Agent's detailed build spec. [workflow.json](workflow.json)
+is a hand-authored, machine-readable description of the same
+orchestration graph -- entry points, the Orchestrator's routing, each
+agent, the mocked/real data layer, and what's traced to Langfuse. This
+project is hand-coded Python rather than built in a visual workflow
+tool (n8n/Make/Flowise), so nothing was literally "exported"; this file
+serves the same purpose.
 
 ## Status
 

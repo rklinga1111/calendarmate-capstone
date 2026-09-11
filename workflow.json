@@ -1,0 +1,195 @@
+{
+  "name": "CalendarMate",
+  "description": "Multi-agent AI assistant that classifies a natural-language calendar/email request and routes it to one specialist agent, each grounded by real tool calls and traced end-to-end in Langfuse.",
+  "version": "1.0",
+  "orchestration_pattern": "classify-then-dispatch",
+  "entry_points": [
+    {
+      "id": "pytest",
+      "name": "pytest suite",
+      "file": "tests/",
+      "data_mode": "mocked",
+      "traced": false,
+      "description": "Deterministic keyword assertions per agent, called directly (not through the router) in most cases."
+    },
+    {
+      "id": "harness",
+      "name": "Evaluation harness",
+      "file": "harness.py",
+      "data_mode": "mocked",
+      "traced": true,
+      "description": "Runs 18 baseline + edge cases through the full pipeline, graded by an LLM judge (judge_openai.py)."
+    },
+    {
+      "id": "live_assistant",
+      "name": "Live CLI",
+      "file": "live_assistant.py",
+      "data_mode": "real",
+      "traced": true,
+      "description": "Real Google Calendar and Gmail account, one request per invocation."
+    }
+  ],
+  "nodes": [
+    {
+      "id": "orchestrator",
+      "type": "router",
+      "name": "Orchestrator",
+      "file": "src/calendarmate/orchestrator.py",
+      "function": "route_request",
+      "model": "gpt-4o-mini",
+      "temperature": 0,
+      "traced": true,
+      "trace_span": "classify-intent",
+      "description": "Classifies the request into exactly one of five routes. Never answers the request itself.",
+      "outputs": ["briefing", "scheduling", "email", "follow_up", "digest"],
+      "on_invalid_output": "run_orchestrator catches ValueError and returns FALLBACK_MESSAGE instead of raising"
+    },
+    {
+      "id": "briefing",
+      "type": "agent",
+      "name": "Briefing Agent",
+      "file": "src/calendarmate/briefing.py",
+      "function": "answer_briefing",
+      "model": "gpt-4o-mini",
+      "traced": true,
+      "trace_span": "answer-briefing",
+      "capability_tier": "core",
+      "tools": ["get_calendar_events"],
+      "description": "Answers calendar questions. Conflict detection is exact-overlap math in Python, not model judgment."
+    },
+    {
+      "id": "scheduler",
+      "type": "agent",
+      "name": "Scheduler Agent",
+      "file": "src/calendarmate/scheduler.py",
+      "function": "handle_scheduling_request",
+      "model": "gpt-4o-mini",
+      "traced": true,
+      "trace_span": "handle-scheduling",
+      "capability_tier": "core",
+      "tools": [
+        "check_availability",
+        "propose_alternative_slots",
+        "create_event",
+        "find_meeting_to_cancel",
+        "cancel_event"
+      ],
+      "extended_capabilities": [
+        "conflict_resolution",
+        "cancellation_with_ownership_check",
+        "recurring_meetings"
+      ],
+      "description": "Books, moves, and cancels meetings via a multi-round tool loop. Off-hours and past-time bookings are refused in code, not just by prompt."
+    },
+    {
+      "id": "email",
+      "type": "agent",
+      "name": "Email Agent",
+      "file": "src/calendarmate/email.py",
+      "function": "answer_email_request",
+      "model": "gpt-4o",
+      "traced": true,
+      "trace_span": "answer-email",
+      "capability_tier": "core",
+      "tools": ["get_emails", "classify_emails"],
+      "description": "Answers inbox questions and classifies mail into Action Required / Payment-Deadline / FYI. Only agent on the full model, not the mini variant, for classification accuracy."
+    },
+    {
+      "id": "followup",
+      "type": "agent",
+      "name": "Follow-Up Agent",
+      "file": "src/calendarmate/followup.py",
+      "function": "run_followup_agent",
+      "model": "gpt-4o-mini",
+      "traced": true,
+      "trace_span": "run-followup",
+      "capability_tier": "extended",
+      "tools": ["get_meeting_record", "send_followup_email"],
+      "description": "Retrieves a past meeting's real notes and drafts/sends a follow-up email to its actual attendees."
+    },
+    {
+      "id": "digest",
+      "type": "agent",
+      "name": "Digest Agent",
+      "file": "src/calendarmate/digest.py",
+      "function": "answer_digest_request",
+      "model": null,
+      "traced": false,
+      "capability_tier": "extended",
+      "tools": [],
+      "delegates_to": ["briefing", "email"],
+      "description": "No tools or LLM call of its own -- concatenates Briefing's and Email's independently grounded answers under two headings."
+    },
+    {
+      "id": "tools_mocked",
+      "type": "data_layer",
+      "name": "Mocked fixtures",
+      "file": "src/calendarmate/tools/*.py",
+      "fixtures": [
+        "src/calendarmate/fixtures/calendar.json",
+        "src/calendarmate/fixtures/inbox.json",
+        "src/calendarmate/fixtures/meetings.json"
+      ],
+      "used_by_entry_points": ["pytest", "harness"],
+      "description": "Pure-Python read/write functions over static JSON fixtures."
+    },
+    {
+      "id": "tools_real",
+      "type": "data_layer",
+      "name": "Real Google integrations",
+      "file": "src/calendarmate/integrations/*.py",
+      "apis": ["Google Calendar API", "Gmail API", "Google Docs API"],
+      "used_by_entry_points": ["live_assistant"],
+      "description": "Parallel, independent implementation of the same tool shapes against the user's real account."
+    },
+    {
+      "id": "langfuse",
+      "type": "observability",
+      "name": "Langfuse",
+      "file": "src/calendarmate/observability.py",
+      "functions": ["trace_agent_call", "trace_tool_call"],
+      "captures": ["one root span per request", "a named span per agent", "a named generation per LLM call", "four tool calls as tool-typed observations"],
+      "tags": ["agent name", "routed category", "user_id", "harness case id"],
+      "description": "Every span/call above reports here. Disabled unconditionally during pytest via LANGFUSE_TRACING_ENABLED=false."
+    }
+  ],
+  "edges": [
+    { "from": "pytest", "to": "orchestrator", "type": "invokes" },
+    { "from": "harness", "to": "orchestrator", "type": "invokes" },
+    { "from": "live_assistant", "to": "orchestrator", "type": "invokes" },
+
+    { "from": "orchestrator", "to": "briefing", "type": "routes", "condition": "category == briefing" },
+    { "from": "orchestrator", "to": "scheduler", "type": "routes", "condition": "category == scheduling" },
+    { "from": "orchestrator", "to": "email", "type": "routes", "condition": "category == email" },
+    { "from": "orchestrator", "to": "followup", "type": "routes", "condition": "category == follow_up" },
+    { "from": "orchestrator", "to": "digest", "type": "routes", "condition": "category == digest" },
+
+    { "from": "digest", "to": "briefing", "type": "delegates" },
+    { "from": "digest", "to": "email", "type": "delegates" },
+
+    { "from": "briefing", "to": "tools_mocked", "type": "reads", "when": "entry_point in [pytest, harness]" },
+    { "from": "scheduler", "to": "tools_mocked", "type": "reads_writes", "when": "entry_point in [pytest, harness]" },
+    { "from": "email", "to": "tools_mocked", "type": "reads", "when": "entry_point in [pytest, harness]" },
+    { "from": "followup", "to": "tools_mocked", "type": "reads_writes", "when": "entry_point in [pytest, harness]" },
+
+    { "from": "briefing", "to": "tools_real", "type": "reads", "when": "entry_point == live_assistant" },
+    { "from": "scheduler", "to": "tools_real", "type": "reads_writes", "when": "entry_point == live_assistant" },
+    { "from": "email", "to": "tools_real", "type": "reads", "when": "entry_point == live_assistant" },
+    { "from": "followup", "to": "tools_real", "type": "reads_writes", "when": "entry_point == live_assistant" },
+
+    { "from": "orchestrator", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
+    { "from": "briefing", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
+    { "from": "scheduler", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
+    { "from": "email", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" },
+    { "from": "followup", "to": "langfuse", "type": "trace", "when": "entry_point in [harness, live_assistant]" }
+  ],
+  "evaluation": {
+    "dataset": "baseline_cases.json",
+    "case_count": 18,
+    "grader": "judge_openai.py (LLM-as-judge)",
+    "harness": "harness.py",
+    "results_file": "eval_results.json",
+    "last_known_result": "18/18 passed"
+  },
+  "note": "This project is hand-coded Python, not built in a visual workflow tool (n8n/Make/Flowise) -- this file is a hand-authored structured description of the same orchestration graph shown in the architecture diagram, provided to satisfy machine-readable workflow documentation requirements."
+}
