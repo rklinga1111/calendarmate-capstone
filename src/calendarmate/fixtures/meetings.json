@@ -1,0 +1,26 @@
+[
+  {
+    "meeting_id": "m_001",
+    "title": "Q3 Roadmap Sync",
+    "attendees": ["Priya", "Marcus", "Alice"],
+    "notes": "Priya will finalize the Q3 roadmap doc by Friday. Marcus agreed to schedule the stakeholder review for next week. Alice will share updated headcount numbers before the next sync."
+  },
+  {
+    "meeting_id": "m_002",
+    "title": "1:1 with Jordan",
+    "attendees": ["Alice", "Jordan"],
+    "notes": "Alice and Jordan caught up about how things have been going. They talked generally about career growth and what a path to promotion might look like at a high level. Jordan mentioned being interested in more visibility on cross-team projects. Nothing specific was decided."
+  },
+  {
+    "meeting_id": "m_003",
+    "title": "Quick Sync",
+    "attendees": ["Alice", "Bob"],
+    "notes": ""
+  },
+  {
+    "meeting_id": "m_004",
+    "title": "Design Review",
+    "attendees": ["Alice", "Eve", "Frank"],
+    "notes": "Eve will update the API documentation by Wednesday. The new caching approach was approved, no further action needed. Frank will follow up with the security team about the audit findings by end of week."
+  }
+]

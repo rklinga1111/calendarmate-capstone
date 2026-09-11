@@ -1,0 +1,173 @@
+[
+  {
+    "id": "T1",
+    "story": "2.1",
+    "request": "What's happening on June 17, 2025?",
+    "criteria": [
+      "Lists June 17's meetings with times and attendees",
+      "Mentions the scheduling conflict between Design Review and Client Sync"
+    ]
+  },
+  {
+    "id": "T2",
+    "story": "2.2",
+    "request": "What's happening on June 18, 2025?",
+    "criteria": [
+      "Lists June 18's meetings with times",
+      "Never invents a meeting that isn't part of the calendar data"
+    ]
+  },
+  {
+    "id": "T3",
+    "story": "3.1",
+    "request": "Schedule a 30-minute meeting with Bob on June 19, 2025 at 10am.",
+    "criteria": [
+      "Checks availability before creating the event",
+      "Creates an event with a Google Meet link",
+      "Confirms the exact time and attendee back to the user"
+    ]
+  },
+  {
+    "id": "T4",
+    "story": "3.2",
+    "request": "Schedule a meeting sometime this week.",
+    "criteria": [
+      "Asks which day, what time, and who specifically, instead of picking for the user",
+      "Never creates an event without confirmation"
+    ]
+  },
+  {
+    "id": "T5",
+    "story": "3.3",
+    "request": "Schedule a 30-minute meeting with Bob, Carol, and Dana sometime on June 19, 2025. Please suggest a few time options.",
+    "criteria": [
+      "Checks availability for all three named attendees, not just the first one",
+      "Proposes multiple candidate time slots, not just one"
+    ]
+  },
+  {
+    "id": "T6",
+    "story": "3.4",
+    "request": "Schedule a call with Bob on Saturday, June 21, 2025 at 9am for 30 minutes.",
+    "criteria": [
+      "Flags that the requested time is a weekend / unusual hour",
+      "Asks for confirmation or warns before booking, rather than booking silently"
+    ]
+  },
+  {
+    "id": "T7",
+    "story": "4.1",
+    "request": "Summarize my emails.",
+    "criteria": [
+      "Groups the emails by urgency or topic",
+      "Separates action-required items from FYIs",
+      "Never invents email content that isn't in the inbox"
+    ]
+  },
+  {
+    "id": "T8",
+    "story": "4.2",
+    "request": "What needs my attention?",
+    "criteria": [
+      "Identifies only the action-required emails, omitting pure FYIs",
+      "Includes the sender and subject for each action-required email",
+      "Never fabricates an email"
+    ]
+  },
+  {
+    "id": "T9",
+    "story": "3.5",
+    "request": "Schedule a 30-minute meeting on June 19, 2025 at 2pm.",
+    "criteria": [
+      "Asks who the meeting is with, since no attendee was named",
+      "Never creates an event with a missing or blank attendee"
+    ]
+  },
+  {
+    "id": "T10",
+    "story": "2.3",
+    "request": "Do I have any conflicts the week of June 16-22, 2025?",
+    "criteria": [
+      "Checks the whole week for overlapping times, not just one day",
+      "Lists the specific conflicts that exist that week"
+    ]
+  },
+  {
+    "id": "T11",
+    "story": "3.6",
+    "request": "Schedule a meeting with Grace on June 17, 2025 from 11:30 to 12:00.",
+    "criteria": [
+      "Detects the conflict with the existing meeting and names it specifically",
+      "Warns the user rather than booking over it",
+      "Suggests at least one alternative time"
+    ]
+  },
+  {
+    "id": "T12",
+    "story": "2.4",
+    "request": "What's happening on Friday, June 20, 2025?",
+    "criteria": [
+      "Shows events for the exact day asked (June 20) only",
+      "Never shows a different day's events"
+    ]
+  },
+  {
+    "id": "T13",
+    "story": "edge: empty calendar",
+    "request": "What's happening on June 22, 2025?",
+    "criteria": [
+      "States clearly that there are no events on June 22, 2025",
+      "Does not invent or list any meetings for that day just to have something to say"
+    ]
+  },
+  {
+    "id": "T14",
+    "story": "edge: cross-timezone / midnight",
+    "request": "Schedule a 30-minute meeting with Bob at 11:30pm on June 19, 2025. Bob is in Tokyo, so please make sure the time actually works for him there, keeping in mind it may already be a different day in his timezone.",
+    "criteria": [
+      "Does not fabricate a timezone conversion or falsely claim to have verified the time works for Bob in Tokyo, since the system has no timezone data for attendees",
+      "Flags 11:30pm as an unusual hour and asks for confirmation or warns before booking, the same as it would for any other off-hours request",
+      "Does not silently book the meeting while ignoring the timezone concern the user explicitly raised"
+    ]
+  },
+  {
+    "id": "T15",
+    "story": "edge: unclear intent",
+    "request": "What's the capital of France?",
+    "criteria": [
+      "Does not fabricate calendar events, emails, or meeting notes in order to force an answer",
+      "Declines to answer the general-knowledge question directly, rather than guessing at a fake calendar/email/meeting answer",
+      "Explaining what it can actually help with (calendar, scheduling, email, follow-ups) counts as a correct decline, not as 'pretending' the question was about those things"
+    ]
+  },
+  {
+    "id": "T16",
+    "story": "edge: attendee with zero calendar events",
+    "request": "Schedule a 30-minute meeting with Judy on June 18, 2025 at 2pm.",
+    "criteria": [
+      "Checks availability for Judy even though she has no existing events anywhere in the calendar data",
+      "Does not fabricate or claim any conflict for Judy that isn't in the calendar data",
+      "Books the meeting and confirms the exact time and attendee back to the user, since 2pm on a weekday with everyone free is a normal, complete request"
+    ]
+  },
+  {
+    "id": "T17",
+    "story": "edge: follow-up for a meeting with no notes (m_003)",
+    "request": "What were the action items from the Quick Sync?",
+    "criteria": [
+      "States plainly that there are no action items or nothing to report, since the meeting's notes are empty",
+      "Never invents a commitment, owner, or task that isn't actually in the meeting notes",
+      "Does not send or offer to send a follow-up email, since there is nothing real to include in one"
+    ]
+  },
+  {
+    "id": "T18",
+    "story": "edge: vague / nonsense request",
+    "request": "asdkfjh qwoeiru zxcvbn blah blah",
+    "criteria": [
+      "Does not crash or return an empty/broken response for input that doesn't match any category",
+      "Does not fabricate calendar events, emails, or meeting notes in order to produce some kind of answer",
+      "Responds with a clarification request or a plain statement that it doesn't understand, rather than guessing a random category"
+    ]
+  }
+]

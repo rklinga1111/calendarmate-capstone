@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+
+# Secrets / real-account credentials -- never commit
+.env
+credentials.json
+token.json
+.pending_cancellation.json
+
+# Exported chat transcripts -- may contain real personal data discussed
+# while testing against the live Google account (real names, emails,
+# meeting subjects). Not project deliverables; keep local only.
+*- Claude.html
+*- Claude_files/
+Building capstone project with Claude multi-agent solution - Claude.html
+Building capstone project with Claude multi-agent solution - Claude_files/
+
+# Editor/OS lock and temp files
+~$*
+.claude/scheduled_tasks.lock

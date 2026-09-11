@@ -1,0 +1,110 @@
+[
+  {
+    "title": "Team Standup",
+    "date": "2025-06-16",
+    "start": "09:00",
+    "end": "09:30",
+    "attendees": ["Alice", "Bob", "Carol"],
+    "owner": "Alice",
+    "series_id": "series_team_standup"
+  },
+  {
+    "title": "1:1 with Manager",
+    "date": "2025-06-16",
+    "start": "10:00",
+    "end": "10:30",
+    "attendees": ["Alice", "Dana"]
+  },
+  {
+    "title": "Team Standup",
+    "date": "2025-06-17",
+    "start": "09:00",
+    "end": "09:30",
+    "attendees": ["Alice", "Bob", "Carol"],
+    "owner": "Alice",
+    "series_id": "series_team_standup"
+  },
+  {
+    "title": "Team Standup",
+    "date": "2025-06-23",
+    "start": "09:00",
+    "end": "09:30",
+    "attendees": ["Alice", "Bob", "Carol"],
+    "owner": "Alice",
+    "series_id": "series_team_standup"
+  },
+  {
+    "title": "Design Review",
+    "date": "2025-06-17",
+    "start": "11:00",
+    "end": "12:00",
+    "attendees": ["Alice", "Eve"]
+  },
+  {
+    "title": "Client Sync",
+    "date": "2025-06-17",
+    "start": "11:30",
+    "end": "12:00",
+    "attendees": ["Alice", "Grace"]
+  },
+  {
+    "title": "Bob's Weekly Sync",
+    "date": "2025-06-17",
+    "start": "15:00",
+    "end": "15:30",
+    "attendees": ["Alice", "Bob"],
+    "owner": "Bob",
+    "series_id": "series_bob_sync"
+  },
+  {
+    "title": "Bob's Weekly Sync",
+    "date": "2025-06-24",
+    "start": "15:00",
+    "end": "15:30",
+    "attendees": ["Alice", "Bob"],
+    "owner": "Bob",
+    "series_id": "series_bob_sync"
+  },
+  {
+    "title": "Lunch with Dana",
+    "date": "2025-06-17",
+    "start": "12:30",
+    "end": "13:30",
+    "attendees": ["Alice", "Dana"]
+  },
+  {
+    "title": "Marketing Sync",
+    "date": "2025-06-18",
+    "start": "10:00",
+    "end": "10:30",
+    "attendees": ["Alice", "Frank"]
+  },
+  {
+    "title": "Board Prep",
+    "date": "2025-06-18",
+    "start": "15:00",
+    "end": "16:00",
+    "attendees": ["Alice", "Bob"]
+  },
+  {
+    "title": "1:1 with Bob",
+    "date": "2025-06-19",
+    "start": "09:00",
+    "end": "09:30",
+    "attendees": ["Alice", "Bob"]
+  },
+  {
+    "title": "Sprint Retro",
+    "date": "2025-06-20",
+    "start": "16:00",
+    "end": "17:00",
+    "attendees": ["Alice", "Bob", "Carol", "Dana"]
+  },
+  {
+    "title": "Happy Hour Planning",
+    "date": "2025-06-20",
+    "start": "16:30",
+    "end": "17:00",
+    "attendees": ["Alice", "Eve"]
+  }
+]

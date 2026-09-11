@@ -1,0 +1,93 @@
+[
+  {
+    "sender": "Bob",
+    "subject": "Need your approval on the Q3 budget",
+    "body": "Can you approve the attached budget by EOD Friday?",
+    "read": false,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "GitHub",
+    "subject": "Your pull request was merged",
+    "body": "PR #482 was merged into main.",
+    "read": false,
+    "received_at": "2025-06-16"
+  },
+  {
+    "sender": "Carol",
+    "subject": "Quick question about the client deck",
+    "body": "Did you want the deck in dark mode or light mode? Let me know today.",
+    "read": false,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "Newsletter",
+    "subject": "This week in engineering",
+    "body": "A roundup of this week's blog posts from the team.",
+    "read": false,
+    "received_at": "2025-06-16"
+  },
+  {
+    "sender": "Dana",
+    "subject": "Reminder: 1:1 moved to 3pm",
+    "body": "Just a heads up, I moved our 1:1 today to 3pm.",
+    "read": false,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "Eve",
+    "subject": "Can you review my PR before end of day?",
+    "body": "Would appreciate a review on PR #501 before EOD if you have time.",
+    "read": false,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "IT Security",
+    "subject": "Your password expires in 3 days",
+    "body": "Please reset your password before it expires to avoid being locked out.",
+    "read": false,
+    "received_at": "2025-06-12"
+  },
+  {
+    "sender": "Frank",
+    "subject": "Thanks for the help yesterday!",
+    "body": "Really appreciated you helping me debug that issue.",
+    "read": false,
+    "received_at": "2025-06-13"
+  },
+  {
+    "sender": "Grace",
+    "subject": "Old thread - already resolved",
+    "body": "This is fine now, no action needed on this one.",
+    "read": true,
+    "received_at": "2025-06-10"
+  },
+  {
+    "sender": "Bob",
+    "subject": "Following up: budget approval is time-sensitive",
+    "body": "Any update on the budget approval? Need it by 5pm today.",
+    "read": false,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "Henry (Acme Recruiting)",
+    "subject": "A few quick questions about your application",
+    "body": "Could you confirm your notice period and share your updated resume? We'd like to move forward with scheduling an interview.",
+    "read": true,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "City Power & Light",
+    "subject": "Your electricity bill is due",
+    "body": "Your electricity bill of $84.50 for account ending 4471 is due on June 20, 2025.",
+    "read": false,
+    "received_at": "2025-06-17"
+  },
+  {
+    "sender": "Horizon Bank",
+    "subject": "Get a pre-approved personal loan on your card",
+    "body": "You're pre-approved for a personal loan up to $10,000 on your Horizon Bank credit card. Apply now to take advantage of this limited-time offer.",
+    "read": false,
+    "received_at": "2025-06-17"
+  }
+]

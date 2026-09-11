@@ -1,0 +1,30 @@
+[project]
+name = "calendarmate"
+version = "0.1.0"
+description = "CalendarMate: an orchestrator that routes requests to briefing, scheduling, and email agents"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.50.0",
+    # Core, not optional: calendarmate.observability (imported by
+    # pipeline.py, orchestrator.py, and all four agent modules) calls
+    # into langfuse unconditionally now that tracing is wired into those
+    # functions themselves, not just live_assistant.py's one entry
+    # point. Safe for pytest/harness.py either way -- Langfuse's client
+    # degrades to a silent no-op without LANGFUSE_PUBLIC_KEY/
+    # LANGFUSE_SECRET_KEY/LANGFUSE_BASE_URL set, which neither sets.
+    "langfuse>=4.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "python-dotenv>=1.0.0",
+]
+google = [
+    "google-auth>=2.32.0",
+    "google-auth-oauthlib>=1.2.0",
+    "google-api-python-client>=2.140.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
