@@ -9,6 +9,7 @@
     "observability": "Langfuse",
     "real_integrations": ["Google Calendar API", "Gmail API", "Google Docs API"],
     "test_framework": "pytest",
+    "demo_stack": "Flask + flask-cors (optional \"demo\" dependency group, not needed for pytest/harness.py/live_assistant.py's own CLI use)",
     "fine_tuning": "none -- behavior governed by per-agent system prompts (src/calendarmate/prompts/*.md) plus code-level guards for anything exactly computable"
   },
 
@@ -39,7 +40,15 @@
       "file": "live_assistant.py",
       "data_mode": "real",
       "traced": true,
-      "description": "Real Google Calendar and Gmail account, one request per invocation. Kept entirely separate from run_orchestrator's mocked default -- pytest and harness.py never touch this file or the real account."
+      "description": "Real Google Calendar and Gmail account, one request per invocation. Kept entirely separate from run_orchestrator's mocked default -- pytest and harness.py never touch this file or the real account. Its real-account request handling is a reusable function, handle_request(message), shared with the demo entry point below rather than duplicated."
+    },
+    {
+      "id": "demo",
+      "name": "Local browser demo",
+      "files": ["calendarmate-demo.html", "demo_server.py"],
+      "data_mode": "real",
+      "traced": true,
+      "description": "A standalone chat-style HTML page (opened as a local file, not served) that POSTs to a minimal local Flask backend on 127.0.0.1:8787 only (never 0.0.0.0), which calls the same live_assistant.handle_request used by the CLI -- so the demo hits the real Google Calendar/Gmail/OpenAI account too, not mocked fixtures. CORS is enabled for the file:// origin the HTML is opened from."
     }
   ],
 
@@ -49,14 +58,21 @@
     "files": ["src/calendarmate/orchestrator.py", "src/calendarmate/pipeline.py"],
     "functions": {
       "route_request": "classifies the request into exactly one label, never generates the final answer",
-      "run_orchestrator": "calls route_request, looks up the matching agent in _DISPATCH, calls it, returns its answer unmodified"
+      "run_orchestrator": "calls route_request, looks up the matching agent in _DISPATCH, calls it, returns its answer unmodified",
+      "chitchat_precheck": "a fast, exact-match, zero-model-call check for pure conversational input (greetings, thanks, farewells, capability/identity questions), run BEFORE route_request is ever called"
     },
     "model": "gpt-4o-mini",
     "temperature": 0,
     "traced": true,
     "trace_spans": ["run-orchestrator", "classify-intent"],
-    "valid_routes": ["briefing", "scheduling", "email", "follow_up", "digest"],
-    "fallback_behavior": "an unclassifiable request (empty label, or one outside the 5 routes) raises ValueError inside route_request; run_orchestrator catches it and returns FALLBACK_MESSAGE instead of crashing -- found via the harness's T15 edge case, where the live classifier once returned an empty string and took down an entire run"
+    "valid_routes": ["briefing", "scheduling", "email", "follow_up", "digest", "chitchat"],
+    "fallback_behavior": "an unclassifiable request (the model responds `none`, empty, or anything outside the 6 valid routes) raises ValueError inside route_request; run_orchestrator catches it and returns FALLBACK_MESSAGE instead of crashing -- found via the harness's T15 edge case, where the live classifier once returned an empty string and took down an entire run",
+    "chitchat_handling": {
+      "bug_found": "plain conversational input (\"hi\", \"thanks\", \"what can you do\") was being force-classified into `digest` (two full agent calls, one on the pricier gpt-4o) or an empty/invalid label -- orchestrator.md had no instruction at all for non-calendar/email input, found via real testing against the browser demo",
+      "fix": "chitchat_precheck() catches 11+ common phrasings in plain Python before any model call, each with its own distinct reply (greeting/wellbeing/thanks/capability/identity/farewell); a `chitchat` route was added as the model-classified fallback for phrasings the precheck misses",
+      "regression_caught_and_fixed": "the first version of the chitchat prompt wording was too broad and also swallowed T18 (pure gibberish) -- narrowed so `chitchat` is exclusively genuine pleasantries, with an explicit `none` label carved out for genuinely unclear input so it still asks for clarification instead of getting a generic capability reply. Full harness stayed 18/18 after the correction.",
+      "verified": "all 11 target phrases resolve with zero model calls and ~0ms latency (down from ~0.7-1.1s per phrase); the fix was also required in live_assistant.py's separate dispatch table, which would otherwise KeyError on the new chitchat category"
+    }
   },
 
   "agents": [
