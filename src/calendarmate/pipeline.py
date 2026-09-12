@@ -18,7 +18,7 @@ from calendarmate.digest import answer_digest_request
 from calendarmate.email import answer_email_request
 from calendarmate.followup import run_followup_agent
 from calendarmate.observability import trace_agent_call
-from calendarmate.orchestrator import Route, route_request
+from calendarmate.orchestrator import CHITCHAT_REPLIES, Route, chitchat_precheck, route_request
 from calendarmate.scheduler import handle_scheduling_request
 
 
@@ -64,14 +64,29 @@ def run_orchestrator(request: str, client: ChatClient, *, user_id: str | None = 
 
 
 def _run_orchestrator_impl(request: str, client: ChatClient, *, user_id: str | None = None) -> str:
+    # Pure conversational input ("hi", "thanks", "what can you do") is
+    # matched here, before route_request is even called -- no model call,
+    # no agent dispatch. Without this, a greeting was being forced into
+    # `digest` (two full agent calls, one on the more expensive gpt-4o)
+    # or an empty/invalid label, for input that was never asking about a
+    # calendar or inbox at all.
+    precheck_reply = chitchat_precheck(request)
+    if precheck_reply is not None:
+        return precheck_reply
+
     try:
         category = route_request(request, client, user_id=user_id)
     except ValueError:
-        # A request that doesn't fit any of the four categories at all
-        # (e.g. "What's the capital of France?") can make the classifier
+        # A request that doesn't fit any of the categories at all (e.g.
+        # "What's the capital of France?") can make the classifier
         # return something unparseable rather than force a wrong label --
         # that's `route_request` correctly refusing to guess, not a bug,
         # so the fallback here is a real answer to a real case, not
         # defensive code for something that can't happen.
         return FALLBACK_MESSAGE
+    if category == "chitchat":
+        # The model-classified fallback for conversational input the
+        # exact-match precheck above didn't catch -- never dispatched to
+        # an agent, same as the precheck path above.
+        return CHITCHAT_REPLIES["other"]
     return _DISPATCH[category](request, client, user_id=user_id)

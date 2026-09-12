@@ -22,3 +22,6 @@ Building capstone project with Claude multi-agent solution - Claude_files/
 # Editor/OS lock and temp files
 ~$*
 .claude/scheduled_tasks.lock
+
+# Local demo server runtime log -- not a deliverable
+demo_server.log

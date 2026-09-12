@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CalendarMate Demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#e7eaf1; --sheet:#ffffff; --ink:#171b26; --muted:#5b6273; --border:#dde1ea;
+    --amber:#c9791c; --amber-soft:#f4e3c8; --user-bubble:#eef1f6;
+    --danger:#a8461f; --danger-soft:#f6e2da;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0c0e14; --sheet:#14161f; --ink:#e9ecf4; --muted:#9aa2b6; --border:#262b3a;
+      --amber:#e0a545; --amber-soft:#332a1a; --user-bubble:#1e2434;
+      --danger:#e2825b; --danger-soft:#3a271e;
+    }
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"IBM Plex Sans", system-ui, sans-serif;
+    display:flex; justify-content:center; padding:32px 16px;
+    min-height:100vh;
+  }
+  .app{
+    width:100%; max-width:620px; background:var(--sheet);
+    border:1px solid var(--border); border-radius:12px;
+    box-shadow:0 20px 40px -24px rgba(22,26,35,.3);
+    display:flex; flex-direction:column; height:min(88vh, 760px);
+    overflow:hidden;
+  }
+  header{
+    padding:18px 22px; border-bottom:1px solid var(--border);
+    display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+  }
+  header h1{
+    font-family:"Fraunces", Georgia, serif; font-size:19px; font-weight:600; margin:0;
+  }
+  header .badge{
+    font-family:"IBM Plex Mono", monospace; font-size:10.5px; padding:2px 8px;
+    border-radius:99px; background:var(--danger-soft); color:var(--danger); font-weight:500;
+  }
+  header .status{
+    font-family:"IBM Plex Mono", monospace; font-size:11px; color:var(--muted); margin-left:auto;
+  }
+  header .status .dot{ display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:5px; background:var(--muted); }
+  header .status.up .dot{ background:#0ca30c; }
+  header .status.down .dot{ background:var(--danger); }
+
+  .messages{ flex:1; overflow-y:auto; padding:20px 22px; display:flex; flex-direction:column; gap:14px; }
+  .msg{ max-width:82%; font-size:13.5px; line-height:1.55; white-space:pre-wrap; }
+  .msg.user{ align-self:flex-end; background:var(--user-bubble); padding:10px 14px; border-radius:12px 12px 2px 12px; }
+  .msg.assistant{ align-self:flex-start; padding:10px 14px; border-radius:12px 12px 12px 2px; background:var(--amber-soft); }
+  .msg.error{ align-self:flex-start; padding:10px 14px; border-radius:12px 12px 12px 2px; background:var(--danger-soft); color:var(--danger); font-family:"IBM Plex Mono",monospace; font-size:12px; }
+  .msg .role{ display:block; font-family:"IBM Plex Mono", monospace; font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin-bottom:4px; }
+  .msg.assistant .role{ color:var(--amber); }
+  .msg.pending{ opacity:.6; }
+
+  form{ display:flex; gap:10px; padding:16px 18px; border-top:1px solid var(--border); }
+  textarea{
+    flex:1; resize:none; border:1px solid var(--border); border-radius:9px;
+    padding:10px 12px; font-family:"IBM Plex Sans", sans-serif; font-size:13.5px;
+    background:var(--sheet); color:var(--ink); line-height:1.4; height:44px;
+  }
+  textarea:focus{ outline:2px solid var(--amber); outline-offset:1px; }
+  button{
+    font-family:"IBM Plex Sans", sans-serif; font-weight:600; font-size:13px;
+    background:var(--amber); color:#fff; border:none; border-radius:9px;
+    padding:0 20px; cursor:pointer;
+  }
+  button:disabled{ opacity:.5; cursor:default; }
+
+  .empty{ margin:auto; text-align:center; color:var(--muted); font-size:13px; max-width:36ch; line-height:1.6; }
+  .empty b{ color:var(--ink); }
+</style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>CalendarMate</h1>
+      <span class="badge">real account</span>
+      <span class="status" id="status"><span class="dot"></span>checking server...</span>
+    </header>
+    <div class="messages" id="messages">
+      <div class="empty">
+        Ask about your calendar, your inbox, scheduling, or a follow-up --
+        <b>this talks to your real Google Calendar and Gmail</b> through
+        <code>demo_server.py</code>, not a mocked demo.
+      </div>
+    </div>
+    <form id="form">
+      <textarea id="input" placeholder="e.g. What's on my calendar today?" required></textarea>
+      <button type="submit" id="send">Send</button>
+    </form>
+  </div>
+
+<script>
+  const API_URL = "http://127.0.0.1:8787/chat";
+  const messagesEl = document.getElementById("messages");
+  const form = document.getElementById("form");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("send");
+  const statusEl = document.getElementById("status");
+
+  function clearEmptyState() {
+    const empty = messagesEl.querySelector(".empty");
+    if (empty) empty.remove();
+  }
+
+  function addMessage(role, text) {
+    clearEmptyState();
+    const div = document.createElement("div");
+    div.className = "msg " + role;
+    const roleLabel = document.createElement("span");
+    roleLabel.className = "role";
+    roleLabel.textContent = role === "user" ? "You" : role === "error" ? "Error" : "CalendarMate";
+    div.appendChild(roleLabel);
+    div.appendChild(document.createTextNode(text));
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  }
+
+  async function checkServer() {
+    try {
+      await fetch(API_URL, { method: "OPTIONS" });
+      statusEl.className = "status up";
+      statusEl.innerHTML = '<span class="dot"></span>server connected';
+    } catch (e) {
+      statusEl.className = "status down";
+      statusEl.innerHTML = '<span class="dot"></span>server not reachable -- run demo_server.py';
+    }
+  }
+  checkServer();
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const message = input.value.trim();
+    if (!message) return;
+
+    addMessage("user", message);
+    input.value = "";
+    sendBtn.disabled = true;
+    const pending = addMessage("assistant", "Thinking...");
+    pending.classList.add("pending");
+
+    try {
+      const res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message }),
+      });
+      const data = await res.json();
+      pending.remove();
+      if (!res.ok) {
+        addMessage("error", data.error || ("Request failed with status " + res.status));
+      } else {
+        addMessage("assistant", data.response);
+      }
+      statusEl.className = "status up";
+      statusEl.innerHTML = '<span class="dot"></span>server connected';
+    } catch (err) {
+      pending.remove();
+      addMessage("error", "Could not reach the demo server at " + API_URL + ". Is demo_server.py running?");
+      statusEl.className = "status down";
+      statusEl.innerHTML = '<span class="dot"></span>server not reachable -- run demo_server.py';
+    } finally {
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  });
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      form.requestSubmit();
+    }
+  });
+</script>
+</body>
+</html>

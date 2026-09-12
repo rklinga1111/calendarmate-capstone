@@ -29,7 +29,24 @@ Classify every request into exactly one of:
   A broad, open-ended "what needs my attention" / "what's going on" /
   "catch me up" phrasing with no explicit calendar-only or email-only
   wording is `digest`, since the user hasn't told you to look at just
-  one.
+  one -- but only when the request is actually asking about something.
+  A bare greeting is not "broad," it's not asking about anything at
+  all; use `chitchat` for that instead (see below).
+- `chitchat` — the message is SPECIFICALLY a greeting, a farewell, a
+  thanks, a "how are you," or a question about what you (the
+  assistant) can do (e.g. "hi," "thanks," "what can you do," "bye").
+  Never force one of the other four categories onto input like this
+  just because it doesn't fit anywhere else.
+
+`chitchat` is not a catch-all for "doesn't fit anywhere else" -- it is
+specifically genuine social pleasantries and nothing else. Gibberish,
+garbled text, or a request that's unclear/unrelated to anything (e.g.
+"asdkfjh qwoeiru," a random trivia question) is NOT `chitchat` -- it
+doesn't belong to any of these six categories, so respond with the
+single word `none` for that instead. Only use `chitchat` when you can
+tell EXACTLY which pleasantry it is (a greeting, a thanks, a farewell,
+or a capability question) -- if you can't tell what the message even
+means, that's `none`, not `chitchat`.
 
 Respond with only the single label — no explanation, no punctuation, no
 extra text.

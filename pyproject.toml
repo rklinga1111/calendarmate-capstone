@@ -25,6 +25,13 @@ google = [
     "google-auth-oauthlib>=1.2.0",
     "google-api-python-client>=2.140.0",
 ]
+demo = [
+    # Only needed to run demo_server.py -- the local backend for
+    # calendarmate-demo.html. Not needed for pytest, harness.py, or
+    # live_assistant.py's own CLI use.
+    "flask>=3.0.0",
+    "flask-cors>=4.0.0",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

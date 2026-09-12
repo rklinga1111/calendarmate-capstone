@@ -83,7 +83,7 @@ from calendarmate.integrations.google_calendar import (
     get_meeting_record_from_google_calendar,
     load_events_from_google_calendar,
 )
-from calendarmate.orchestrator import route_request
+from calendarmate.orchestrator import CHITCHAT_REPLIES, chitchat_precheck, route_request
 from calendarmate.pipeline import ChatClient, FALLBACK_MESSAGE
 from calendarmate.scheduler import handle_scheduling_request
 
@@ -219,10 +219,13 @@ _LIVE_DISPATCH = {
 }
 
 
-def main() -> None:
-    if len(sys.argv) < 2:
-        raise SystemExit('Usage: python live_assistant.py "your request here"')
-    request = " ".join(sys.argv[1:])
+def handle_request(request: str) -> str:
+    """Runs one request through the real, live-account pipeline --
+    classification, then whichever agent's own tool loop -- and returns
+    the final answer as a string. This is the reusable core behind both
+    the CLI (`main`, below) and any other real caller (e.g.
+    demo_server.py) that needs the same real-account behavior without
+    re-implementing it."""
     client = OpenAI().chat.completions
     langfuse = get_client()
     # The real authenticated Google account email -- computed once here
@@ -237,13 +240,13 @@ def main() -> None:
     # set up an equivalent outer wrapping of its own.
     user_id = get_authenticated_user_email()
 
-    # One root span per CLI invocation, so every LLM call made while
-    # answering this one request -- the Orchestrator's classification,
-    # then whichever agent's own (possibly multi-round) tool loop -- nests
-    # under a single trace instead of each becoming its own disconnected
-    # top-level trace. Named verb-first ("handle-request") per Langfuse's
-    # own naming convention (active language, no dynamic values -- names
-    # are a stable API that dashboards/evaluators key on). user_id and
+    # One root span per call, so every LLM call made while answering this
+    # one request -- the Orchestrator's classification, then whichever
+    # agent's own (possibly multi-round) tool loop -- nests under a single
+    # trace instead of each becoming its own disconnected top-level trace.
+    # Named verb-first ("handle-request") per Langfuse's own naming
+    # convention (active language, no dynamic values -- names are a
+    # stable API that dashboards/evaluators key on). user_id and
     # environment are propagated from the very start (per Langfuse's own
     # guidance: propagate_attributes as early as possible, since spans
     # created before it don't get it retroactively) -- `environment` is
@@ -258,24 +261,43 @@ def main() -> None:
         as_type="span", name="handle-request", input=request
     ) as root_span:
         with propagate_attributes(user_id=user_id, trace_name="handle-request", environment="production"):
-            try:
-                category = route_request(request, client, user_id=user_id)
-            except ValueError:
-                result = FALLBACK_MESSAGE
+            precheck_reply = chitchat_precheck(request)
+            if precheck_reply is not None:
+                # Pure conversational input ("hi", "thanks") -- no model
+                # call, no agent dispatch. Same fast path pipeline.py
+                # uses; kept in sync here since this is a separate real-
+                # account entry point with its own dispatch table.
+                result = precheck_reply
             else:
-                with propagate_attributes(tags=[category]):
-                    result = _LIVE_DISPATCH[category](request, client, user_id=user_id)
+                try:
+                    category = route_request(request, client, user_id=user_id)
+                except ValueError:
+                    result = FALLBACK_MESSAGE
+                else:
+                    with propagate_attributes(tags=[category]):
+                        if category == "chitchat":
+                            result = CHITCHAT_REPLIES["other"]
+                        else:
+                            result = _LIVE_DISPATCH[category](request, client, user_id=user_id)
         # The root span's own input/output IS the trace's input/output in
         # the current SDK (a separate `set_trace_io` call exists but is
         # deprecated) -- explicitly the request/response text, not
         # whatever a nested call's own raw function args happen to be.
         root_span.update(output=result)
 
-    # Short-lived script, not a long-running server -- without an
-    # explicit flush, buffered events can be lost when the process exits
-    # right after this.
+    # Each call flushes explicitly rather than relying on a single
+    # end-of-process flush -- this function is now called repeatedly from
+    # a long-running server (demo_server.py), not just once per CLI
+    # invocation, so there's no single "end" to flush at otherwise.
     langfuse.flush()
-    print(result)
+    return result
+
+
+def main() -> None:
+    if len(sys.argv) < 2:
+        raise SystemExit('Usage: python live_assistant.py "your request here"')
+    request = " ".join(sys.argv[1:])
+    print(handle_request(request))
 
 
 if __name__ == "__main__":
