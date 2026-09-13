@@ -17,6 +17,13 @@ project is hand-coded Python rather than built in a visual workflow
 tool (n8n/Make/Flowise), so nothing was literally "exported"; this file
 serves the same purpose.
 
+See [CalendarMate_Writeup.docx](CalendarMate_Writeup.docx) for the
+project writeup, [COST_ANALYSIS.md](COST_ANALYSIS.md) for cost and
+production metrics pulled from real Langfuse trace data, and
+[screenshots/](screenshots) for the architecture/system-design diagrams
+plus evidence of the test suite, eval harness, and observability
+dashboard actually running.
+
 ## Status
 
 - [x] Epic 1 — Orchestrator routing (`src/calendarmate/orchestrator.py`)
@@ -37,6 +44,16 @@ serves the same purpose.
 - [x] Real Google Calendar/Gmail integration — `live_assistant.py`, an
   explicitly separate entry point from everything above (see "Real
   Google Calendar/Gmail" below).
+- [x] Observability — every request is traced end-to-end to Langfuse
+  (`src/calendarmate/observability.py`), with per-agent and per-tool
+  spans, cost, and token counts. See
+  [COST_ANALYSIS.md](COST_ANALYSIS.md) for real numbers pulled from
+  those traces.
+- [x] Local browser demo — `calendarmate-demo.html` +
+  `demo_server.py` (see "Browser demo" below), including a
+  zero-model-call chitchat pre-check so plain pleasantries ("hi",
+  "thanks") get an instant reply instead of an expensive
+  classify-then-dispatch round trip.
 
 ## Setup
 
@@ -70,10 +87,11 @@ pytest
 python harness.py
 ```
 
-Runs all 15 cases in [baseline_cases.json](baseline_cases.json) — the
-12 backlog acceptance cases (T1-T12) plus 3 edge cases (T13-T15: an
-empty calendar day, a cross-timezone/midnight scheduling request, and a
-request with no clear intent at all) — through the real end-to-end
+Runs all 18 cases in [baseline_cases.json](baseline_cases.json) — the
+12 backlog acceptance cases (T1-T12) plus 6 edge cases (T13-T18: an
+empty calendar day, a cross-timezone/midnight scheduling request, a
+request with no clear intent at all, an unknown attendee, a meeting
+with no notes to follow up on, and pure gibberish input) — through the real end-to-end
 pipeline (`run_orchestrator()` — classification and dispatch together,
 not each agent called directly) and grades each response against its
 criteria with an LLM judge ([judge_openai.py](judge_openai.py)). Writes
@@ -89,6 +107,24 @@ environment) — there's no offline/skip mode for this one, since judging
 `pytest` and `harness.py` always run against the mocked fixtures
 (`calendar.json`/`inbox.json`/`meetings.json`) — nothing below changes
 that.
+
+## Browser demo
+
+A minimal local web UI for trying CalendarMate against your **real**
+Google Calendar/Gmail without using the CLI:
+
+```bash
+python demo_server.py
+```
+
+Then open `calendarmate-demo.html` directly in a browser (double-click
+it, or drag it into a tab). It posts to a local Flask server on
+`127.0.0.1:8787` (never `0.0.0.0`), which calls the exact same
+`handle_request()` function `live_assistant.py`'s CLI uses — so
+anything typed into the demo hits your real account the same way a CLI
+command would. Plain conversational input ("hi", "thanks") is answered
+instantly by a zero-model-call chitchat pre-check rather than going
+through the full classify-then-dispatch pipeline.
 
 ## Real Google Calendar/Gmail (optional, separate from everything above)
 
