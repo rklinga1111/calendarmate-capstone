@@ -251,6 +251,47 @@ def test_system_prompt_includes_a_precomputed_upcoming_days_table() -> None:
         assert expected_date.isoformat() in system_message
 
 
+def test_ambiguous_weekday_reminder_is_injected_when_request_names_todays_weekday() -> None:
+    # TODAY is itself a Tuesday. A live run showed the model skipping the
+    # day-ambiguity question 3 of 4 times for exactly this request shape,
+    # jumping straight into resolving whatever conflict "today" produced
+    # instead of asking first (see the ambiguous-weekday test below and
+    # CLAUDE.md's own note on this). This test only proves the Python-side
+    # trigger fires correctly -- it can't prove the live model then obeys
+    # it, since that needs a real API call this offline test doesn't make.
+    client = ScriptedChatClient([final_response("Did you mean today or next Tuesday?")])
+    handle_scheduling_request(
+        "Schedule a meeting with Grace on Tuesday from 11:30 to 12:00.",
+        client,
+        today=TODAY,
+        events=load_events(),
+    )
+    messages = client.calls[0]["messages"]
+    reminder_texts = [m["content"] for m in messages if m["role"] == "system"]
+    assert any("ambiguity itself must be settled before any tool runs" in text for text in reminder_texts)
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "Schedule a meeting with Grace next Tuesday from 11:30 to 12:00.",
+        "Schedule a meeting with Grace on Tuesday, June 24 from 11:30 to 12:00.",
+        "Schedule a meeting with Grace on 2025-06-24 from 11:30 to 12:00.",
+        "Schedule a meeting with Grace on Thursday from 11:30 to 12:00.",
+    ],
+)
+def test_ambiguous_weekday_reminder_is_not_injected_when_already_resolved(request_text: str) -> None:
+    # Each of these already resolves the day unambiguously (an explicit
+    # "next", an explicit date, or a weekday that isn't today's own) --
+    # the reminder must not fire and crowd the model with an irrelevant
+    # instruction for a request that was never actually ambiguous.
+    client = ScriptedChatClient([final_response("...")])
+    handle_scheduling_request(request_text, client, today=TODAY, events=load_events())
+    messages = client.calls[0]["messages"]
+    reminder_texts = [m["content"] for m in messages if m["role"] == "system"]
+    assert not any("ambiguity itself must be settled before any tool runs" in text for text in reminder_texts)
+
+
 def test_system_prompt_includes_current_time_defaulting_to_midnight() -> None:
     # A real "schedule for 10am today" request once got booked at 10am even
     # though it was already 3pm -- handle_scheduling_request never told the

@@ -10,6 +10,7 @@ may skip tools entirely and just ask a clarifying question.
 from __future__ import annotations
 
 import json
+import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Callable, Protocol
@@ -209,6 +210,41 @@ def _upcoming_days_table(today: date) -> str:
         suffix = " (today)" if offset == 0 else ""
         lines.append(f"{day.strftime('%A')}: {day.isoformat()}{suffix}")
     return "\n".join(lines)
+
+
+_MONTH_NAMES = (
+    "january", "february", "march", "april", "may", "june", "july",
+    "august", "september", "october", "november", "december",
+)
+
+
+def _mentions_ambiguous_weekday(request: str, today: date) -> bool:
+    # Detects, from the request's own wording, exactly the situation
+    # scheduler.md's day-ambiguity rule describes: a bare weekday name
+    # that happens to equal today's own weekday, with nothing else in the
+    # request that would already resolve it (an explicit "next", an
+    # explicit month name, or an ISO date). This is the same "decide it
+    # once, deterministically, from the request text" reasoning as
+    # is_cancel_intent and has_confirmed_unusual_time below -- added
+    # because the model was observed (3 of 4 live runs) skipping the
+    # day-ambiguity question entirely and jumping straight into whatever
+    # conflict that day produced, even though scheduler.md's own rule
+    # already says to ask first. A reminder injected right at the start
+    # of the conversation, gated on this Python-computed fact, is far
+    # more reliable than trusting the model to notice the ambiguity on
+    # its own every time, the same lesson as every other code-computed
+    # gate in this file.
+    lowered = request.lower()
+    today_name = today.strftime("%A").lower()
+    if not re.search(rf"\b{today_name}\b", lowered):
+        return False
+    if re.search(rf"\bnext\s+{today_name}\b", lowered):
+        return False
+    if re.search(r"\b\d{4}-\d{2}-\d{2}\b", lowered):
+        return False
+    if any(re.search(rf"\b{month}\b", lowered) for month in _MONTH_NAMES):
+        return False
+    return True
 
 
 _BUSINESS_START = time(8, 0)
@@ -447,6 +483,11 @@ def _handle_scheduling_request_impl(
     has_confirmed_unusual_time = any(phrase in request.lower() for phrase in _OFF_HOURS_CONFIRMATION_PHRASES)
 
     today = today if today is not None else date.today()
+
+    # Computed after `today` is resolved, since it needs today's actual
+    # weekday name -- see _mentions_ambiguous_weekday's own docstring for
+    # why this is decided here rather than left entirely to the prompt.
+    ambiguous_weekday = _mentions_ambiguous_weekday(request, today)
     # `now` is only for a same-day "has this time already passed" check --
     # it's deliberately NOT defaulted to the real wall clock, since every
     # mocked test books against a fixed, arbitrary `today` (e.g. June 2025)
@@ -500,6 +541,32 @@ def _handle_scheduling_request_impl(
         },
         {"role": "user", "content": request},
     ]
+
+    if ambiguous_weekday:
+        # Restated right here, immediately before the first generation,
+        # rather than trusting the static system prompt alone -- the same
+        # "a rule restated right before the generation it governs is
+        # followed far more reliably" reasoning already used for the
+        # conflict-naming reminder below. Blunt on purpose: the observed
+        # failure was the model treating "today, with a conflict" as a
+        # normal conflict-resolution case instead of recognizing this
+        # request never should have been resolved to a specific day yet.
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    f"Reminder: this request names \"{today.strftime('%A')}\", "
+                    f"which is today's own weekday. Per the day-ambiguity rule "
+                    "above, this is genuinely ambiguous between today and next "
+                    "week. Ask the user which one they mean, in a reply with NO "
+                    "tool calls at all. Do not call check_availability (or any "
+                    "other tool) to check today's date first and then resolve "
+                    "whatever conflict or availability that produces -- the "
+                    "ambiguity itself must be settled before any tool runs, "
+                    "even if today's slot turns out to be free."
+                ),
+            }
+        )
 
     reply_parts: list[str] = []
     looked_up_event_ids: set[str] = set()

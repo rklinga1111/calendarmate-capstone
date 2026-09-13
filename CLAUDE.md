@@ -653,22 +653,37 @@ each agent's already-existing injectable parameters instead.
   produce (naming the conflicting meeting, proposing alternatives)
   instead of first asking whether "Tuesday" means today or next week, as
   `scheduler.md`'s rule above requires. A code-level fix was attempted
-  (detecting this ambiguity from the request's own wording in Python,
-  the same pattern as `is_cancel_intent`/`has_confirmed_unusual_time`,
-  and injecting a blunt reminder right before the first generation) but
-  could not be verified: every live test failed with
-  `openai.RateLimitError: ... project_spend_limit_exceeded` on the
-  Interview-Kickstart-issued project's OpenAI key, the same class of
-  external, account-level blocker as the earlier `401
-  invalid_organization` incident. Per this project's own established
-  discipline -- never trust a change that hasn't actually been run
-  against the live API -- the attempted fix was reverted rather than
-  shipped unverified. Left as a known, accepted limitation for now:
-  re-attempt the Python-side fix (detect the ambiguity from the
-  request's own wording, inject a reminder before the first tool call)
-  once the OpenAI project's spend limit is resolved, and verify with
-  several isolated re-runs before trusting it, the same way every other
-  fix in this file was verified.
+  twice. **First attempt**: detecting the ambiguity from the request's
+  own wording in Python (the same pattern as
+  `is_cancel_intent`/`has_confirmed_unusual_time`) and injecting a blunt
+  reminder right before the first generation -- could not be verified,
+  since every live test failed with `openai.RateLimitError: ...
+  project_spend_limit_exceeded` on the Interview-Kickstart-issued
+  project's OpenAI key, the same class of external, account-level
+  blocker as the earlier `401 invalid_organization` incident. Per this
+  project's own established discipline -- never trust a change that
+  hasn't actually been run against the live API -- that attempt was
+  reverted rather than shipped unverified.
+  **Second attempt** (current state): the identical Python-side fix
+  (`_mentions_ambiguous_weekday` in `scheduler.py`, gated on the
+  request naming today's own weekday with no "next"/explicit
+  date/month already resolving it) was reimplemented, this time with
+  offline test coverage that doesn't need the live API at all --
+  `test_ambiguous_weekday_reminder_is_injected_when_request_names_todays_weekday`
+  and the parametrized
+  `test_ambiguous_weekday_reminder_is_not_injected_when_already_resolved`
+  assert directly on the scripted client's captured `messages` list,
+  proving the Python-side trigger logic itself is correct (fires for
+  "Tuesday" when today is Tuesday, stays silent for "next Tuesday," an
+  explicit date, or a non-matching weekday). This is real, deterministic
+  coverage of half the fix -- **the other half, whether the live model
+  actually obeys the injected reminder, is still unverified** as of this
+  writing, since the OpenAI project's spend limit remains exceeded. Do
+  not treat this as fully resolved until
+  `test_ambiguous_weekday_matching_today_prompts_clarification` itself
+  has been re-run live several times and passed consistently -- the
+  same "several isolated re-runs before trusting it" bar every other
+  live-model fix in this file was held to.
 - `src/calendarmate/email.py` — `answer_email_request(request, client,
   today=..., emails=...)` follows the Briefing Agent's shape: one tool
   (`get_emails`), `emails` injectable the same way `events` is. Unlike
