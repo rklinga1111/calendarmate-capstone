@@ -642,6 +642,33 @@ each agent's already-existing injectable parameters instead.
   *only* two situations that warrant pausing (this day-ambiguity case,
   and the weekend/unusual-hour/conflict case) so the model doesn't infer
   a broader "always ask" policy from either one.
+- **`test_ambiguous_weekday_matching_today_prompts_clarification` is a
+  known, higher-than-usual-flakiness live test, documented rather than
+  silently tolerated.** Re-run in isolation 4 times while investigating
+  a pytest failure, it passed only once (1/4) -- worse than this
+  project's normal "occasional single-case variance" baseline (see the
+  harness section above), suggesting the model more often skips the
+  day-ambiguity question than asks it for this exact request shape: it
+  jumps straight to resolving whatever real conflict "today" happens to
+  produce (naming the conflicting meeting, proposing alternatives)
+  instead of first asking whether "Tuesday" means today or next week, as
+  `scheduler.md`'s rule above requires. A code-level fix was attempted
+  (detecting this ambiguity from the request's own wording in Python,
+  the same pattern as `is_cancel_intent`/`has_confirmed_unusual_time`,
+  and injecting a blunt reminder right before the first generation) but
+  could not be verified: every live test failed with
+  `openai.RateLimitError: ... project_spend_limit_exceeded` on the
+  Interview-Kickstart-issued project's OpenAI key, the same class of
+  external, account-level blocker as the earlier `401
+  invalid_organization` incident. Per this project's own established
+  discipline -- never trust a change that hasn't actually been run
+  against the live API -- the attempted fix was reverted rather than
+  shipped unverified. Left as a known, accepted limitation for now:
+  re-attempt the Python-side fix (detect the ambiguity from the
+  request's own wording, inject a reminder before the first tool call)
+  once the OpenAI project's spend limit is resolved, and verify with
+  several isolated re-runs before trusting it, the same way every other
+  fix in this file was verified.
 - `src/calendarmate/email.py` — `answer_email_request(request, client,
   today=..., emails=...)` follows the Briefing Agent's shape: one tool
   (`get_emails`), `emails` injectable the same way `events` is. Unlike
